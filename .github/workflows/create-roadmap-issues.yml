@@ -36,6 +36,54 @@ jobs:
 
             let existingIssues = await listIssues();
 
+            async function ensureLabel(name, color, description) {
+              try {
+                await github.rest.issues.getLabel({
+                  owner,
+                  repo,
+                  name,
+                });
+                core.info(`Label already exists: ${name}`);
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                await github.rest.issues.createLabel({
+                  owner,
+                  repo,
+                  name,
+                  color,
+                  description,
+                });
+                core.info(`Created label: ${name}`);
+              }
+            }
+
+            async function listMilestones() {
+              return github.paginate(github.rest.issues.listMilestones, {
+                owner,
+                repo,
+                state: "all",
+                per_page: 100,
+              });
+            }
+
+            async function ensureMilestone(title, description) {
+              const milestones = await listMilestones();
+              const existing = milestones.find((milestone) => milestone.title === title);
+              if (existing) {
+                core.info(`Milestone already exists: ${title}`);
+                return existing;
+              }
+
+              const { data } = await github.rest.issues.createMilestone({
+                owner,
+                repo,
+                title,
+                description,
+              });
+              core.info(`Created milestone: ${title}`);
+              return data;
+            }
+
             async function findIssue(title) {
               existingIssues = await listIssues();
               return existingIssues.find((issue) => issue.title === title && !issue.pull_request);
@@ -60,9 +108,48 @@ jobs:
               return data;
             }
 
+            const labelDefinitions = [
+              ["roadmap", "6E7781", "Roadmap tracker issue"],
+              ["phase:1", "0E8A16", "Phase 1 roadmap work"],
+              ["phase:2", "1D76DB", "Phase 2 roadmap work"],
+              ["phase:3", "5319E7", "Phase 3 roadmap work"],
+              ["phase:4", "B60205", "Phase 4 roadmap work"],
+              ["phase:5", "D93F0B", "Phase 5 roadmap work"],
+              ["phase:6", "0052CC", "Phase 6 roadmap work"],
+              ["phase:7", "006B75", "Phase 7 roadmap work"],
+              ["product-polish", "A2EEEF", "Product polish and UX improvements"],
+              ["user-data", "C5DEF5", "User data ingestion and schema work"],
+              ["dashboards", "D4C5F9", "Dashboard builder work"],
+              ["analytics-intelligence", "F9D0C4", "Smarter analytics work"],
+              ["evals", "FEF2C0", "Evaluation and model-quality work"],
+              ["infrastructure", "BFDADC", "Infrastructure and operations work"],
+              ["data-sources", "BFD4F2", "External data-source connector work"],
+              ["ci", "FBCA04", "Continuous integration work"],
+            ];
+
+            for (const [name, color, description] of labelDefinitions) {
+              await ensureLabel(name, color, description);
+            }
+
+            const milestoneDefinitions = [
+              ["Phase 1: Product Polish", "Product polish, saved workflows, exports, and CI."],
+              ["Phase 2: User Data", "Bring user-owned datasets into the application."],
+              ["Phase 3: Dashboards", "Save answers into reusable dashboards."],
+              ["Phase 4: Smarter Analytics", "Clarifying questions, semantic metrics, and answer traceability."],
+              ["Phase 5: Model and Eval System", "Evaluation dashboard, model comparisons, and quality tracking."],
+              ["Phase 6: Real App Infrastructure", "Authentication, workspaces, permissions, and admin tools."],
+              ["Phase 7: External Data Sources", "Database connectors and scheduled or live data access."],
+            ];
+
+            const milestonesByTitle = {};
+            for (const [title, description] of milestoneDefinitions) {
+              milestonesByTitle[title] = await ensureMilestone(title, description);
+            }
+
             const phases = [
               {
                 title: "Phase 1: Product Polish",
+                labels: ["roadmap", "phase:1", "product-polish"],
                 body: `## Goal
             Make the app feel more complete and trustworthy for day-to-day use.
 
@@ -79,6 +166,7 @@ jobs:
               },
               {
                 title: "Phase 2: User Data",
+                labels: ["roadmap", "phase:2", "user-data"],
                 body: `## Goal
             Let users bring their own datasets into the dashboard.
 
@@ -91,6 +179,7 @@ jobs:
               },
               {
                 title: "Phase 3: Dashboards",
+                labels: ["roadmap", "phase:3", "dashboards"],
                 body: `## Goal
             Let users turn useful answers into reusable dashboards.
 
@@ -103,6 +192,7 @@ jobs:
               },
               {
                 title: "Phase 4: Smarter Analytics",
+                labels: ["roadmap", "phase:4", "analytics-intelligence"],
                 body: `## Goal
             Make answers more reliable, explainable, and business-aware.
 
@@ -115,6 +205,7 @@ jobs:
               },
               {
                 title: "Phase 5: Model and Eval System",
+                labels: ["roadmap", "phase:5", "evals"],
                 body: `## Goal
             Turn the existing eval harness into a visible model-quality workflow.
 
@@ -127,6 +218,7 @@ jobs:
               },
               {
                 title: "Phase 6: Real App Infrastructure",
+                labels: ["roadmap", "phase:6", "infrastructure"],
                 body: `## Goal
             Add the infrastructure expected from a multi-user analytics application.
 
@@ -139,6 +231,7 @@ jobs:
               },
               {
                 title: "Phase 7: External Data Sources",
+                labels: ["roadmap", "phase:7", "data-sources"],
                 body: `## Goal
             Connect the dashboard to real databases beyond local files.
 
@@ -162,6 +255,7 @@ jobs:
             const workItems = [
               {
                 title: "Add query history",
+                labels: ["enhancement", "phase:1", "product-polish"],
                 body: `## Goal
             Show previous questions, generated SQL, runtime, and result metadata.
 
@@ -173,6 +267,7 @@ jobs:
               },
               {
                 title: "Add saved questions",
+                labels: ["enhancement", "phase:1", "product-polish"],
                 body: `## Goal
             Let users save commonly used analytics prompts.
 
@@ -184,6 +279,7 @@ jobs:
               },
               {
                 title: "Add SQL edit mode",
+                labels: ["enhancement", "phase:1", "product-polish"],
                 body: `## Goal
             Let advanced users inspect and adjust generated SQL before execution.
 
@@ -195,6 +291,7 @@ jobs:
               },
               {
                 title: "Export result tables as CSV",
+                labels: ["enhancement", "phase:1", "product-polish"],
                 body: `## Goal
             Let users download query results for external analysis.
 
@@ -206,6 +303,7 @@ jobs:
               },
               {
                 title: "Improve query workflow loading and error states",
+                labels: ["enhancement", "phase:1", "product-polish"],
                 body: `## Goal
             Make the streaming query flow easier to understand when work is pending or fails.
 
@@ -217,6 +315,7 @@ jobs:
               },
               {
                 title: "Add GitHub Actions CI",
+                labels: ["enhancement", "phase:1", "ci"],
                 body: `## Goal
             Run project checks automatically on every push and pull request.
 
@@ -231,4 +330,83 @@ jobs:
 
             for (const issue of workItems) {
               await ensureIssue(issue);
+            }
+
+            const metadataByTitle = {
+              "Phase 1: Product Polish": {
+                labels: ["roadmap", "phase:1", "product-polish"],
+                milestone: "Phase 1: Product Polish",
+              },
+              "Phase 2: User Data": {
+                labels: ["roadmap", "phase:2", "user-data"],
+                milestone: "Phase 2: User Data",
+              },
+              "Phase 3: Dashboards": {
+                labels: ["roadmap", "phase:3", "dashboards"],
+                milestone: "Phase 3: Dashboards",
+              },
+              "Phase 4: Smarter Analytics": {
+                labels: ["roadmap", "phase:4", "analytics-intelligence"],
+                milestone: "Phase 4: Smarter Analytics",
+              },
+              "Phase 5: Model and Eval System": {
+                labels: ["roadmap", "phase:5", "evals"],
+                milestone: "Phase 5: Model and Eval System",
+              },
+              "Phase 6: Real App Infrastructure": {
+                labels: ["roadmap", "phase:6", "infrastructure"],
+                milestone: "Phase 6: Real App Infrastructure",
+              },
+              "Phase 7: External Data Sources": {
+                labels: ["roadmap", "phase:7", "data-sources"],
+                milestone: "Phase 7: External Data Sources",
+              },
+              "Add query history": {
+                labels: ["enhancement", "phase:1", "product-polish"],
+                milestone: "Phase 1: Product Polish",
+              },
+              "Add saved questions": {
+                labels: ["enhancement", "phase:1", "product-polish"],
+                milestone: "Phase 1: Product Polish",
+              },
+              "Add SQL edit mode": {
+                labels: ["enhancement", "phase:1", "product-polish"],
+                milestone: "Phase 1: Product Polish",
+              },
+              "Export result tables as CSV": {
+                labels: ["enhancement", "phase:1", "product-polish"],
+                milestone: "Phase 1: Product Polish",
+              },
+              "Improve query workflow loading and error states": {
+                labels: ["enhancement", "phase:1", "product-polish"],
+                milestone: "Phase 1: Product Polish",
+              },
+              "Add GitHub Actions CI": {
+                labels: ["enhancement", "phase:1", "ci"],
+                milestone: "Phase 1: Product Polish",
+              },
+            };
+
+            for (const [title, metadata] of Object.entries(metadataByTitle)) {
+              const issue = await findIssue(title);
+              if (!issue) {
+                core.warning(`Could not find issue for metadata update: ${title}`);
+                continue;
+              }
+
+              await github.rest.issues.setLabels({
+                owner,
+                repo,
+                issue_number: issue.number,
+                labels: metadata.labels,
+              });
+
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: issue.number,
+                milestone: milestonesByTitle[metadata.milestone].number,
+              });
+
+              core.info(`Updated metadata for #${issue.number} ${title}`);
             }
