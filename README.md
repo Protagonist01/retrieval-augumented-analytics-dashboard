@@ -15,6 +15,12 @@ Get validated SQL, live results, and a streamed plain-English explanation — al
 
 ---
 
+## Roadmap
+
+Planned future work is tracked in [ROADMAP.md](ROADMAP.md), organized into phased updates for product polish, user data, dashboards, smarter analytics, evals, infrastructure, and external data sources.
+
+---
+
 ## ✨ Why This Exists
 
 RAG over unstructured documents is everywhere. What's less common — and more practically useful — is **natural-language querying over structured data, done right**.
