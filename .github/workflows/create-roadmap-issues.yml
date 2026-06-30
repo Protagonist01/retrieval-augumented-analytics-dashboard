@@ -1,0 +1,234 @@
+name: Create Roadmap Issues
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/create-roadmap-issues.yml
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  create-roadmap-issues:
+    name: Create roadmap issue batch
+    runs-on: ubuntu-latest
+    if: github.repository == 'Protagonist01/retrieval-augumented-analytics-dashboard'
+    steps:
+      - name: Create phase trackers and Phase 1 work items
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            async function listIssues() {
+              return github.paginate(github.rest.issues.listForRepo, {
+                owner,
+                repo,
+                state: "all",
+                per_page: 100,
+              });
+            }
+
+            let existingIssues = await listIssues();
+
+            async function findIssue(title) {
+              existingIssues = await listIssues();
+              return existingIssues.find((issue) => issue.title === title && !issue.pull_request);
+            }
+
+            async function ensureIssue({ title, body, labels = ["enhancement"] }) {
+              const existing = await findIssue(title);
+              if (existing) {
+                core.info(`Issue already exists: #${existing.number} ${title}`);
+                return existing;
+              }
+
+              const { data } = await github.rest.issues.create({
+                owner,
+                repo,
+                title,
+                body,
+                labels,
+              });
+
+              core.info(`Created issue: #${data.number} ${title}`);
+              return data;
+            }
+
+            const phases = [
+              {
+                title: "Phase 1: Product Polish",
+                body: `## Goal
+            Make the app feel more complete and trustworthy for day-to-day use.
+
+            ## Planned work
+            - [ ] Add query history with generated SQL, runtime, and result metadata.
+            - [ ] Add saved questions for commonly used analytics prompts.
+            - [ ] Add SQL edit mode for advanced users before execution.
+            - [ ] Add CSV export for result tables.
+            - [ ] Improve loading, empty, and error states across the query workflow.
+            - [ ] Add GitHub Actions CI for backend tests, Ruff, frontend lint, build, and audit.
+
+            ## Notes
+            This is a phase tracker. Individual implementation issues should link back here.`,
+              },
+              {
+                title: "Phase 2: User Data",
+                body: `## Goal
+            Let users bring their own datasets into the dashboard.
+
+            ## Planned work
+            - [ ] Add CSV upload from the web app.
+            - [ ] Add dataset preview before querying.
+            - [ ] Add schema refresh after dataset changes.
+            - [ ] Add a data dictionary editor for column descriptions, synonyms, and business terms.
+            - [ ] Persist dataset metadata for reuse across sessions.`,
+              },
+              {
+                title: "Phase 3: Dashboards",
+                body: `## Goal
+            Let users turn useful answers into reusable dashboards.
+
+            ## Planned work
+            - [ ] Save charts, tables, and KPIs to dashboards.
+            - [ ] Rename dashboard cards and metrics.
+            - [ ] Reorder dashboard cards.
+            - [ ] Add chart customization for chart type, labels, axes, and formatting.
+            - [ ] Export dashboards as PDF or image.`,
+              },
+              {
+                title: "Phase 4: Smarter Analytics",
+                body: `## Goal
+            Make answers more reliable, explainable, and business-aware.
+
+            ## Planned work
+            - [ ] Ask clarifying questions when prompts are ambiguous.
+            - [ ] Add a semantic metrics layer for reusable definitions.
+            - [ ] Define metrics such as revenue, average order value, retention, and margin.
+            - [ ] Show how each answer was calculated.
+            - [ ] Add source table and column traceability for generated answers.`,
+              },
+              {
+                title: "Phase 5: Model and Eval System",
+                body: `## Goal
+            Turn the existing eval harness into a visible model-quality workflow.
+
+            ## Planned work
+            - [ ] Build an evaluation dashboard for the existing golden set.
+            - [ ] Add failed-case review and retry workflows.
+            - [ ] Add model comparison runs for OpenRouter, OpenAI, and Ollama.
+            - [ ] Store eval result history over time.
+            - [ ] Track SQL validity, execution accuracy, and latency trends.`,
+              },
+              {
+                title: "Phase 6: Real App Infrastructure",
+                body: `## Goal
+            Add the infrastructure expected from a multi-user analytics application.
+
+            ## Planned work
+            - [ ] Add authentication.
+            - [ ] Add workspaces or projects.
+            - [ ] Add role-based table and column access controls.
+            - [ ] Add a Redis cache inspector.
+            - [ ] Add an admin monitoring page.`,
+              },
+              {
+                title: "Phase 7: External Data Sources",
+                body: `## Goal
+            Connect the dashboard to real databases beyond local files.
+
+            ## Planned work
+            - [ ] Add a Postgres connector.
+            - [ ] Add a MySQL connector.
+            - [ ] Add a Supabase connector.
+            - [ ] Explore BigQuery and Snowflake support.
+            - [ ] Add scheduled syncs or live querying.`,
+              },
+            ];
+
+            const createdPhases = {};
+            for (const phase of phases) {
+              createdPhases[phase.title] = await ensureIssue(phase);
+            }
+
+            const phase1 = createdPhases["Phase 1: Product Polish"];
+            const phase1Ref = phase1 ? `\n\nPart of #${phase1.number}.` : "";
+
+            const workItems = [
+              {
+                title: "Add query history",
+                body: `## Goal
+            Show previous questions, generated SQL, runtime, and result metadata.
+
+            ## Acceptance criteria
+            - [ ] Users can see recent questions in the UI.
+            - [ ] Each history entry includes generated SQL and status.
+            - [ ] Selecting a history entry restores or reruns the query.
+            - [ ] Tests cover the history state and rendering behavior.${phase1Ref}`,
+              },
+              {
+                title: "Add saved questions",
+                body: `## Goal
+            Let users save commonly used analytics prompts.
+
+            ## Acceptance criteria
+            - [ ] Users can save a question from the query input.
+            - [ ] Saved questions are listed in the UI.
+            - [ ] Users can run a saved question with one action.
+            - [ ] Saved questions survive a page refresh.${phase1Ref}`,
+              },
+              {
+                title: "Add SQL edit mode",
+                body: `## Goal
+            Let advanced users inspect and adjust generated SQL before execution.
+
+            ## Acceptance criteria
+            - [ ] Users can toggle an edit mode for generated SQL.
+            - [ ] Edited SQL still goes through validation.
+            - [ ] Dangerous SQL remains blocked.
+            - [ ] The UI clearly distinguishes generated SQL from edited SQL.${phase1Ref}`,
+              },
+              {
+                title: "Export result tables as CSV",
+                body: `## Goal
+            Let users download query results for external analysis.
+
+            ## Acceptance criteria
+            - [ ] Result tables expose a CSV export action.
+            - [ ] Exported CSV includes headers.
+            - [ ] Values are escaped correctly.
+            - [ ] Empty result sets are handled gracefully.${phase1Ref}`,
+              },
+              {
+                title: "Improve query workflow loading and error states",
+                body: `## Goal
+            Make the streaming query flow easier to understand when work is pending or fails.
+
+            ## Acceptance criteria
+            - [ ] Each pipeline phase has a clear visual state.
+            - [ ] Errors include useful user-facing context.
+            - [ ] Empty states do not look broken.
+            - [ ] Loading states fit the light UI theme.${phase1Ref}`,
+              },
+              {
+                title: "Add GitHub Actions CI",
+                body: `## Goal
+            Run project checks automatically on every push and pull request.
+
+            ## Acceptance criteria
+            - [ ] Backend Ruff check runs in CI.
+            - [ ] Backend tests run in CI.
+            - [ ] Frontend lint runs in CI.
+            - [ ] Frontend build runs in CI.
+            - [ ] npm audit runs in CI or is documented separately.${phase1Ref}`,
+              },
+            ];
+
+            for (const issue of workItems) {
+              await ensureIssue(issue);
+            }
