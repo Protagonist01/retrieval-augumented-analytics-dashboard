@@ -322,10 +322,10 @@ retrieval-augmented-analytics-dashboard/
 
 ### Current Limitations
 
-- **Keyword-only schema retrieval** — complex domain vocabulary can miss relevant tables; a semantic embedding approach would be more robust
-- **No multi-turn support** — each question is independent; "show me the same but for last year" requires re-stating the full question
-- **Single-node DuckDB** — in-process execution is not horizontally scalable; server-mode DuckDB would be needed for multi-instance deployments
-- **Synthetic eval set** — the golden set is adapted from Spider, not real business questions; accuracy on domain-specific data may vary
+- **Keyword-only schema retrieval** - complex domain vocabulary can miss relevant tables; a semantic embedding approach would be more robust
+- **No multi-turn support** - each question is independent; "show me the same but for last year" requires re-stating the full question
+- **Single-node DuckDB** - in-process execution is not horizontally scalable; server-mode DuckDB would be needed for multi-instance deployments
+- **Synthetic eval set** - the golden set is adapted from Spider, not real business questions; accuracy on domain-specific data may vary
 
 ### Planned Work
 
