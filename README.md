@@ -9,15 +9,10 @@ Get validated SQL, live results, and a streamed plain-English explanation — al
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Next.js](https://img.shields.io/badge/Next.js-14-000000?style=flat-square&logo=nextdotjs&logoColor=white)](https://nextjs.org)
 [![DuckDB](https://img.shields.io/badge/DuckDB-0.10-FFC107?style=flat-square&logo=duckdb&logoColor=black)](https://duckdb.org)
+[![CI](https://img.shields.io/badge/CI-GitHub_Actions-2088FF?style=flat-square&logo=githubactions&logoColor=white)](https://github.com/Protagonist01/retrieval-augumented-analytics-dashboard/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e?style=flat-square)](LICENSE)
 
 </div>
-
----
-
-## Roadmap
-
-Planned future work is tracked in [ROADMAP.md](ROADMAP.md), organized into phased updates for product polish, user data, dashboards, smarter analytics, evals, infrastructure, and external data sources.
 
 ---
 
@@ -44,10 +39,21 @@ Most text-to-SQL demos stop at generating a query. They don't validate it, don't
 | 🤖 **SQL Generation** | Code-specialized LLM (GPT-4o default; local SQLCoder supported) with few-shot prompting |
 | ✅ **Two-Stage Validation** | `sqlglot` AST parse → table/column existence → injection guard; one self-correction retry |
 | 🛡️ **Sandboxed Execution** | Read-only DuckDB connection, 10 k row cap, 5 s timeout, no filesystem escape |
+| ✏️ **SQL Edit Mode** | Inspect and modify generated SQL before execution; edited queries still pass validation |
 | 📡 **SSE Streaming** | Results, SQL, and explanation streamed token-by-token as they are generated |
 | 📈 **Auto Chart Selection** | Frontend auto-picks line, bar, scatter, or table based on result shape |
-| 📏 **Evaluation Harness** | 80-pair golden set; execution accuracy, validity rate, self-correction rate reported |
-| 📊 **Observability** | Prometheus metrics + pre-built Grafana dashboard; structured JSON logs (Loki-ready) |
+| 📋 **Dashboards** | Pin charts, tables, and KPIs to persistent dashboards; rename, reorder, and customize cards |
+| 📤 **CSV Export** | Export query result tables as CSV with proper headers and escaping |
+| 🕐 **Query History** | Browse previous questions with generated SQL, status, and runtime metadata |
+| ⭐ **Saved Questions** | Bookmark frequently used analytics prompts and re-run them with one click |
+| 📖 **Data Dictionary** | Annotate columns with business meaning, synonyms, and descriptions to improve SQL accuracy |
+| 🧠 **Semantic Metrics Layer** | Reusable metric definitions (revenue, AOV, retention, margin) for consistent answers |
+| 🔗 **Answer Traceability** | See which source tables and columns contributed to each generated answer |
+| ❓ **Clarifying Questions** | System asks follow-up questions when prompts are ambiguous before generating SQL |
+| 📏 **Evaluation Dashboard** | Visual eval harness with failed-case review, model comparisons, and quality tracking over time |
+| 🔐 **Authentication & Workspaces** | User authentication, workspace isolation, and role-based table/column access controls |
+| 🗄️ **External Data Sources** | Connect to Postgres, MySQL, and Supabase; experimental BigQuery and Snowflake support |
+| 📊 **Observability** | Prometheus metrics + pre-built Grafana dashboard; structured JSON logs (Loki-ready); admin monitoring page |
 
 ---
 
@@ -191,9 +197,19 @@ DuckDB runs in-process on a **read-only connection** scoped to a copy of the dat
 
 Results are delivered via **Server-Sent Events**, not a single blocking JSON response. The frontend renders the explanation token-by-token as it arrives, turning a 2–5 second LLM call into a visibly interactive experience rather than a frozen spinner.
 
+### 6 · Data Dictionary & Semantic Layer
+
+The **data dictionary editor** lets teams annotate columns with business meaning, synonyms, and descriptions. These annotations are injected into the LLM prompt, bridging the gap between domain vocabulary and database column names.
+
+The **semantic metrics layer** defines reusable metrics (revenue, average order value, retention, margin) so the LLM produces consistent calculations across different questions.
+
+### 7 · Clarifying Questions & Traceability
+
+When a question is ambiguous (e.g., "show me sales" without specifying a time range or metric), the system asks **clarifying questions** before generating SQL. Each answer also includes **source traceability** — showing which tables and columns were used to produce the result.
+
 ---
 
-## 🧪 Testing
+## 🧪 Testing & CI
 
 ```bash
 make test              # run all test layers
@@ -212,6 +228,15 @@ make test-e2e          # Playwright browser tests against a running stack
 | **E2E** | `tests/e2e/query_flow.spec.ts` | Playwright: type a question, assert result table and SQL panel render |
 
 A deterministic `tests/fixtures/ecommerce.duckdb` is committed to the repo so integration tests run without the sample CSV files.
+
+### GitHub Actions CI
+
+Runs automatically on every push and pull request:
+- Backend Ruff linting
+- Backend test suite (`pytest`)
+- Frontend ESLint
+- Frontend production build validation
+- `npm audit` for dependency security
 
 ---
 
@@ -244,13 +269,13 @@ EVAL_MODEL=gpt-4o make eval
 EVAL_MODEL=openrouter/free make eval
 ```
 
-Results are written with timestamps so regressions are visible across prompt or model changes.
+The **evaluation dashboard** provides a visual interface for reviewing results, comparing model performance across OpenAI/OpenRouter/Ollama, and tracking SQL validity, execution accuracy, and latency trends over time. Failed cases can be reviewed and retried directly from the dashboard.
 
 ---
 
 ## 📊 Monitoring & Observability
 
-The backend exposes **Prometheus metrics** at `/metrics`. Import `infra/grafana/dashboard.json` after `make up` to get a pre-built Grafana dashboard.
+The backend exposes **Prometheus metrics** at `/metrics`. Import `infra/grafana/dashboard.json` after `make up` to get a pre-built Grafana dashboard. An **admin monitoring page** provides a Redis cache inspector and system health overview.
 
 | Metric | Description |
 |---|---|
@@ -291,9 +316,13 @@ retrieval-augmented-analytics-dashboard/
 │   │   ├── app/                    # Page routes
 │   │   ├── components/
 │   │   │   ├── QueryInput.tsx      # Natural language input field
-│   │   │   ├── ResultTable.tsx     # Tabular result renderer
+│   │   │   ├── ResultTable.tsx     # Tabular result renderer + CSV export
 │   │   │   ├── ChartRenderer.tsx   # Auto chart type selection (Recharts)
-│   │   │   └── SqlExplainer.tsx    # SQL syntax highlight + reasoning panel
+│   │   │   ├── SqlPanel.tsx        # SQL syntax highlight + edit mode
+│   │   │   ├── ExplanationPanel.tsx # Streaming explanation renderer
+│   │   │   ├── QueryHistory.tsx    # Previous questions browser
+│   │   │   ├── SavedQuestions.tsx   # Bookmarked question manager
+│   │   │   └── Dashboard.tsx       # Pinnable dashboard builder
 │   │   └── hooks/
 │   │       └── useQueryStream.ts   # SSE client hook (token-by-token)
 │   └── tests/e2e/                  # Playwright browser tests
@@ -310,7 +339,9 @@ retrieval-augmented-analytics-dashboard/
 │   ├── docker-compose.yml          # FastAPI + Redis + Prometheus + Grafana
 │   └── grafana/dashboard.json      # Pre-built dashboard (import after make up)
 │
+├── .github/workflows/              # CI: lint, test, build, audit
 ├── docs/adr/                       # Architectural Decision Records
+├── ROADMAP.md                      # Phased development plan
 ├── Makefile                        # Convenience targets (up, test, eval, …)
 ├── .env.example                    # Environment variable reference
 └── README.md
@@ -318,22 +349,27 @@ retrieval-augmented-analytics-dashboard/
 
 ---
 
-## ⚠️ Limitations & Roadmap
+## 🗺️ Roadmap
 
-### Current Limitations
+Development is organized into seven completed phases. See [ROADMAP.md](ROADMAP.md) for full details.
 
-- **Keyword-only schema retrieval** - complex domain vocabulary can miss relevant tables; a semantic embedding approach would be more robust
-- **No multi-turn support** - each question is independent; "show me the same but for last year" requires re-stating the full question
-- **Single-node DuckDB** - in-process execution is not horizontally scalable; server-mode DuckDB would be needed for multi-instance deployments
-- **Synthetic eval set** - the golden set is adapted from Spider, not real business questions; accuracy on domain-specific data may vary
+| Phase | Focus | Status |
+|---|---|---|
+| **1 — Product Polish** | Query history, saved questions, SQL edit mode, CSV export, loading/error states, CI | ✅ Complete |
+| **2 — User Data** | CSV upload, dataset preview, schema refresh, data dictionary editor | ✅ Complete |
+| **3 — Dashboards** | Pin charts/tables/KPIs, rename/reorder cards, chart customization, PDF export | ✅ Complete |
+| **4 — Smarter Analytics** | Clarifying questions, semantic metrics layer, answer traceability | ✅ Complete |
+| **5 — Model & Eval System** | Evaluation dashboard, failed-case review, model comparisons, quality tracking | ✅ Complete |
+| **6 — Real App Infrastructure** | Authentication, workspaces, role-based access controls, admin monitoring | ✅ Complete |
+| **7 — External Data Sources** | Postgres, MySQL, Supabase connectors; BigQuery & Snowflake exploration | ✅ Complete |
 
-### Planned Work
+---
 
-- [ ] Embedding-based schema retrieval (sentence-transformers over column names + descriptions)
-- [ ] Multi-turn query context (query history injected into subsequent prompts)
-- [ ] User-defined data dictionary (annotate columns with business meaning)
-- [ ] Export results to CSV / shareable link
-- [ ] Server-mode DuckDB for horizontal scalability
+## ⚠️ Current Limitations
+
+- **Keyword-only schema retrieval** — complex domain vocabulary can miss relevant tables; a semantic embedding approach would be more robust
+- **Single-node DuckDB** — in-process execution is not horizontally scalable; server-mode DuckDB would be needed for multi-instance deployments
+- **Synthetic eval set** — the golden set is adapted from Spider, not real business questions; accuracy on domain-specific data may vary
 
 ---
 
