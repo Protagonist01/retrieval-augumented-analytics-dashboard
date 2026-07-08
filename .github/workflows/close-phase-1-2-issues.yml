@@ -1,0 +1,46 @@
+name: Close Phase 1 and 2 Issues
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/close-phase-1-2-issues.yml
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  close-completed-issues:
+    name: Close completed Phase 1 and 2 issues
+    runs-on: ubuntu-latest
+    if: github.repository == 'Protagonist01/retrieval-augumented-analytics-dashboard'
+    steps:
+      - name: Close issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const completedIssues = [1, 2, 8, 9, 10, 11, 12, 13];
+
+            for (const issue_number of completedIssues) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body: "Completed in Phase 1/2 implementation commits. Shipped query history, saved questions, SQL edit mode, CSV export, improved workflow states, CI, CSV upload, dataset preview, schema refresh, and data dictionary metadata.",
+              });
+
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number,
+                state: "closed",
+                state_reason: "completed",
+              });
+
+              core.info(`Closed #${issue_number}`);
+            }
