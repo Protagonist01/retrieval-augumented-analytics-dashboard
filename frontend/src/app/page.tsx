@@ -6,10 +6,17 @@ import QueryInput from "@/components/QueryInput";
 import SqlPanel from "@/components/SqlPanel";
 import ChartRenderer from "@/components/ChartRenderer";
 import ExplanationPanel from "@/components/ExplanationPanel";
-import { DatasetSummary, QueryHistoryEntry, SavedQuestion, SchemaTable } from "@/types";
+import {
+  DataDictionaryEntry,
+  DatasetSummary,
+  QueryHistoryEntry,
+  SavedQuestion,
+  SchemaTable,
+} from "@/types";
 
 const HISTORY_KEY = "raa.queryHistory";
 const SAVED_KEY = "raa.savedQuestions";
+const DICTIONARY_KEY = "raa.dataDictionary";
 
 function loadStoredList<T>(key: string): T[] {
   if (typeof window === "undefined") return [];
@@ -47,6 +54,17 @@ export default function Home() {
   const [history, setHistory] = useState<QueryHistoryEntry[]>(() =>
     loadStoredList<QueryHistoryEntry>(HISTORY_KEY)
   );
+  const [dictionary, setDictionary] = useState<Record<string, DataDictionaryEntry>>(() => {
+    if (typeof window === "undefined") return {};
+    try {
+      return JSON.parse(localStorage.getItem(DICTIONARY_KEY) || "{}") as Record<
+        string,
+        DataDictionaryEntry
+      >;
+    } catch {
+      return {};
+    }
+  });
   const [schemaOpen, setSchemaOpen] = useState(true);
   const [uploadStatus, setUploadStatus] = useState("");
   const lastRecordedKey = useRef("");
@@ -59,6 +77,23 @@ export default function Home() {
   const persistSavedQuestions = (entries: SavedQuestion[]) => {
     setSavedQuestions(entries);
     localStorage.setItem(SAVED_KEY, JSON.stringify(entries));
+  };
+
+  const updateDictionary = (
+    key: string,
+    field: keyof DataDictionaryEntry,
+    value: string
+  ) => {
+    const next = {
+      ...dictionary,
+      [key]: {
+        description: dictionary[key]?.description || "",
+        synonyms: dictionary[key]?.synonyms || "",
+        [field]: value,
+      },
+    };
+    setDictionary(next);
+    localStorage.setItem(DICTIONARY_KEY, JSON.stringify(next));
   };
 
   const fetchSchema = useCallback(async () => {
@@ -332,6 +367,50 @@ export default function Home() {
           font-size: 0.78rem;
           color: var(--text-secondary);
         }
+        .column-preview {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.35rem;
+          padding: 0 0.25rem;
+        }
+        .column-chip {
+          border: 1px solid var(--border-subtle);
+          border-radius: 999px;
+          color: var(--text-secondary);
+          font-size: 0.7rem;
+          padding: 0.1rem 0.45rem;
+        }
+        .dictionary-field {
+          display: flex;
+          flex-direction: column;
+          gap: 0.35rem;
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-md);
+          padding: 0.65rem;
+          background: rgba(255, 255, 255, 0.58);
+        }
+        .dictionary-field label {
+          display: flex;
+          flex-direction: column;
+          gap: 0.25rem;
+          color: var(--text-secondary);
+          font-size: 0.72rem;
+          font-weight: 700;
+        }
+        .dictionary-field input {
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-sm);
+          color: var(--text-primary);
+          background: #ffffff;
+          font: inherit;
+          font-size: 0.78rem;
+          padding: 0.35rem 0.45rem;
+          outline: none;
+        }
+        .dictionary-field input:focus {
+          border-color: var(--border-accent);
+          box-shadow: var(--shadow-glow);
+        }
       `}</style>
 
       <header className="app-header">
@@ -419,6 +498,14 @@ export default function Home() {
                 <div className="dataset-name">{dataset.tableName}</div>
                 <div className="dataset-meta muted"><span>{dataset.source}</span><span>{dataset.rowCount.toLocaleString()} rows</span></div>
                 <div className="dataset-meta muted"><span>{dataset.fileName}</span><span>{formatBytes(dataset.sizeBytes)}</span></div>
+                <div className="column-preview">
+                  {dataset.columns.slice(0, 6).map((column) => (
+                    <span key={column.name} className="column-chip">{column.name}</span>
+                  ))}
+                  {dataset.columns.length > 6 && (
+                    <span className="column-chip">+{dataset.columns.length - 6}</span>
+                  )}
+                </div>
               </div>
             ))}
           </aside>
@@ -458,6 +545,56 @@ export default function Home() {
                   <button type="button" className="small-btn" onClick={() => setQuestion(item.question)}>Use</button>
                   <button type="button" className="small-btn" onClick={() => runQuestion(item.question)}>Run</button>
                 </div>
+              </div>
+            ))}
+          </aside>
+
+          <aside className="side-panel glass-card">
+            <div className="panel-title">
+              <span>Data Dictionary</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setDictionary({});
+                  localStorage.removeItem(DICTIONARY_KEY);
+                }}
+              >
+                Clear
+              </button>
+            </div>
+            {!schema && <span className="muted">Load schema to edit dictionary metadata.</span>}
+            {schema?.tables.map((table) => (
+              <div key={table.name} className="table-item">
+                <div className="table-header">{table.name}</div>
+                {table.columns.map((column) => {
+                  const key = `${table.name}.${column.name}`;
+                  return (
+                    <div key={key} className="dictionary-field">
+                      <strong>{column.name}</strong>
+                      <span className="muted">{column.type}</span>
+                      <label>
+                        Description
+                        <input
+                          value={dictionary[key]?.description || ""}
+                          onChange={(event) =>
+                            updateDictionary(key, "description", event.target.value)
+                          }
+                          placeholder="Business meaning"
+                        />
+                      </label>
+                      <label>
+                        Synonyms
+                        <input
+                          value={dictionary[key]?.synonyms || ""}
+                          onChange={(event) =>
+                            updateDictionary(key, "synonyms", event.target.value)
+                          }
+                          placeholder="Comma-separated aliases"
+                        />
+                      </label>
+                    </div>
+                  );
+                })}
               </div>
             ))}
           </aside>

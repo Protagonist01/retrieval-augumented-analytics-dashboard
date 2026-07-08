@@ -52,3 +52,8 @@ export interface DatasetSummary {
   rowCount: number;
   columns: Array<{ name: string; type: string }>;
 }
+
+export interface DataDictionaryEntry {
+  description: string;
+  synonyms: string;
+}
