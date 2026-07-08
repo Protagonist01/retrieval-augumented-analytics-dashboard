@@ -20,7 +20,7 @@ export interface QueryMeta {
   columnTypes: Record<string, string>;
 }
 
-export type ChartType = "kpi" | "bar" | "line" | "table";
+export type ChartType = "auto" | "kpi" | "bar" | "line" | "table";
 
 export interface SchemaTable {
   name: string;
@@ -56,4 +56,40 @@ export interface DatasetSummary {
 export interface DataDictionaryEntry {
   description: string;
   synonyms: string;
+}
+
+export interface ChartConfig {
+  title: string;
+  chartType: ChartType;
+  xAxisLabel: string;
+  yAxisLabel: string;
+  color: string;
+}
+
+export interface DashboardCard {
+  id: string;
+  title: string;
+  question: string;
+  sql: string | null;
+  columns: string[];
+  rows: QueryValue[][];
+  columnTypes: Record<string, string>;
+  explanation: string;
+  meta: QueryMeta | null;
+  chartConfig: ChartConfig;
+  createdAt: string;
+}
+
+export interface MetricDefinition {
+  id: string;
+  name: string;
+  formula: string;
+  description: string;
+  createdAt: string;
+}
+
+export interface AnswerTrace {
+  tables: string[];
+  columns: string[];
+  calculation: string;
 }

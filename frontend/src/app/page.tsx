@@ -7,8 +7,12 @@ import SqlPanel from "@/components/SqlPanel";
 import ChartRenderer from "@/components/ChartRenderer";
 import ExplanationPanel from "@/components/ExplanationPanel";
 import {
+  AnswerTrace,
+  ChartConfig,
   DataDictionaryEntry,
+  DashboardCard,
   DatasetSummary,
+  MetricDefinition,
   QueryHistoryEntry,
   SavedQuestion,
   SchemaTable,
@@ -17,6 +21,16 @@ import {
 const HISTORY_KEY = "raa.queryHistory";
 const SAVED_KEY = "raa.savedQuestions";
 const DICTIONARY_KEY = "raa.dataDictionary";
+const DASHBOARD_KEY = "raa.dashboardCards";
+const METRICS_KEY = "raa.metricDefinitions";
+
+const DEFAULT_CHART_CONFIG: ChartConfig = {
+  title: "",
+  chartType: "auto",
+  xAxisLabel: "",
+  yAxisLabel: "",
+  color: "#1f8a5b",
+};
 
 function loadStoredList<T>(key: string): T[] {
   if (typeof window === "undefined") return [];
@@ -42,6 +56,55 @@ function formatBytes(value: number) {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function getClarifyingQuestions(value: string) {
+  const normalized = value.trim().toLowerCase();
+  const prompts = [];
+  if (normalized.length > 0 && normalized.length < 18) {
+    prompts.push("Which table or metric should this query use?");
+  }
+  if (/\b(revenue|orders|customers|products|sales)\b/.test(normalized) && !/\bby\b/.test(normalized)) {
+    prompts.push("Should the answer be grouped by time, category, customer, or region?");
+  }
+  if (/\b(recent|latest|last|this month|this year)\b/.test(normalized) && !/\b20\d{2}|day|week|month|quarter|year\b/.test(normalized)) {
+    prompts.push("What exact date range should be used?");
+  }
+  if (/\b(best|top|highest|lowest)\b/.test(normalized) && !/\b\d+\b/.test(normalized)) {
+    prompts.push("How many results should be returned?");
+  }
+  return prompts;
+}
+
+function deriveTrace(sql: string | null, columns: string[], schema: { tables: SchemaTable[] } | null): AnswerTrace {
+  if (!sql) return { tables: [], columns: [], calculation: "No SQL has been generated yet." };
+
+  const tableMatches = Array.from(sql.matchAll(/\b(?:from|join)\s+([a-zA-Z_][\w]*)/gi)).map(
+    (match) => match[1]
+  );
+  const tables = Array.from(new Set(tableMatches));
+  const schemaColumns = new Set(schema?.tables.flatMap((table) => table.columns.map((col) => col.name)) || []);
+  const sqlTokens = new Set(
+    Array.from(sql.matchAll(/\b[a-zA-Z_][\w]*\b/g)).map((match) => match[0])
+  );
+  const sourceColumns = Array.from(
+    new Set([
+      ...columns,
+      ...Array.from(sqlTokens).filter((token) => schemaColumns.has(token)),
+    ])
+  );
+  const calculations = [];
+  if (/\bcount\s*\(/i.test(sql)) calculations.push("counts matching rows");
+  if (/\bsum\s*\(/i.test(sql)) calculations.push("sums numeric values");
+  if (/\bavg\s*\(/i.test(sql)) calculations.push("averages numeric values");
+  if (/\bgroup\s+by\b/i.test(sql)) calculations.push("groups rows before returning results");
+  if (/\bwhere\b/i.test(sql)) calculations.push("filters rows before calculation");
+
+  return {
+    tables,
+    columns: sourceColumns,
+    calculation: calculations.length ? calculations.join(", ") : "selects rows or derived values from the referenced tables",
+  };
+}
+
 export default function Home() {
   const { state, submitQuery, cancel } = useQueryStream();
   const [question, setQuestion] = useState("");
@@ -65,6 +128,14 @@ export default function Home() {
       return {};
     }
   });
+  const [dashboardCards, setDashboardCards] = useState<DashboardCard[]>(() =>
+    loadStoredList<DashboardCard>(DASHBOARD_KEY)
+  );
+  const [metrics, setMetrics] = useState<MetricDefinition[]>(() =>
+    loadStoredList<MetricDefinition>(METRICS_KEY)
+  );
+  const [chartConfig, setChartConfig] = useState<ChartConfig>(DEFAULT_CHART_CONFIG);
+  const [metricDraft, setMetricDraft] = useState({ name: "", formula: "", description: "" });
   const [schemaOpen, setSchemaOpen] = useState(true);
   const [uploadStatus, setUploadStatus] = useState("");
   const lastRecordedKey = useRef("");
@@ -77,6 +148,16 @@ export default function Home() {
   const persistSavedQuestions = (entries: SavedQuestion[]) => {
     setSavedQuestions(entries);
     localStorage.setItem(SAVED_KEY, JSON.stringify(entries));
+  };
+
+  const persistDashboardCards = (entries: DashboardCard[]) => {
+    setDashboardCards(entries);
+    localStorage.setItem(DASHBOARD_KEY, JSON.stringify(entries));
+  };
+
+  const persistMetrics = (entries: MetricDefinition[]) => {
+    setMetrics(entries);
+    localStorage.setItem(METRICS_KEY, JSON.stringify(entries));
   };
 
   const updateDictionary = (
@@ -189,6 +270,60 @@ export default function Home() {
     submitQuery(trimmed);
   };
 
+  const saveToDashboard = () => {
+    if (!state.meta || !state.sql) return;
+    const title = chartConfig.title || activeQuestion || "Dashboard card";
+    const card: DashboardCard = {
+      id: crypto.randomUUID(),
+      title,
+      question: activeQuestion || question,
+      sql: state.sql,
+      columns: state.columns,
+      rows: state.rows,
+      columnTypes: state.columnTypes,
+      explanation: state.explanation,
+      meta: state.meta,
+      chartConfig: { ...chartConfig, title },
+      createdAt: new Date().toISOString(),
+    };
+    persistDashboardCards([card, ...dashboardCards]);
+  };
+
+  const updateDashboardCard = (id: string, patch: Partial<DashboardCard>) => {
+    persistDashboardCards(
+      dashboardCards.map((card) => (card.id === id ? { ...card, ...patch } : card))
+    );
+  };
+
+  const moveDashboardCard = (id: string, direction: -1 | 1) => {
+    const index = dashboardCards.findIndex((card) => card.id === id);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= dashboardCards.length) return;
+    const next = [...dashboardCards];
+    const [card] = next.splice(index, 1);
+    next.splice(nextIndex, 0, card);
+    persistDashboardCards(next);
+  };
+
+  const addMetric = () => {
+    if (!metricDraft.name.trim() || !metricDraft.formula.trim()) return;
+    persistMetrics([
+      {
+        id: crypto.randomUUID(),
+        name: metricDraft.name.trim(),
+        formula: metricDraft.formula.trim(),
+        description: metricDraft.description.trim(),
+        createdAt: new Date().toISOString(),
+      },
+      ...metrics,
+    ]);
+    setMetricDraft({ name: "", formula: "", description: "" });
+  };
+
+  const exportDashboard = () => {
+    window.print();
+  };
+
   const runEditedSql = (sql: string) => {
     const fallbackQuestion = question.trim() || activeQuestion || "Run edited SQL";
     setActiveQuestion(fallbackQuestion);
@@ -237,6 +372,9 @@ export default function Home() {
       setUploadStatus("Schema refresh failed");
     }
   };
+
+  const clarifyingQuestions = getClarifyingQuestions(question);
+  const trace = deriveTrace(state.sql, state.columns, schema);
 
   return (
     <main className="container">
@@ -345,6 +483,101 @@ export default function Home() {
           flex-wrap: wrap;
           gap: 0.5rem;
         }
+        .insight-panel,
+        .dashboard-panel {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+          padding: 1.25rem;
+        }
+        .section-heading {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 1rem;
+          border-bottom: 1px solid var(--border-subtle);
+          padding-bottom: 0.6rem;
+        }
+        .section-heading h2 {
+          font-size: 1rem;
+          line-height: 1.2;
+        }
+        .clarifier-list,
+        .trace-grid,
+        .metric-list,
+        .dashboard-grid {
+          display: grid;
+          gap: 0.75rem;
+        }
+        .trace-grid {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+        .trace-item {
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-md);
+          background: rgba(255, 255, 255, 0.62);
+          padding: 0.75rem;
+        }
+        .trace-item span {
+          display: block;
+          color: var(--text-muted);
+          font-size: 0.72rem;
+          font-weight: 700;
+          margin-bottom: 0.35rem;
+          text-transform: uppercase;
+        }
+        .trace-item strong {
+          color: var(--text-primary);
+          font-size: 0.9rem;
+        }
+        .dashboard-grid {
+          grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        }
+        .dashboard-card {
+          display: flex;
+          flex-direction: column;
+          gap: 0.75rem;
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-lg);
+          background: rgba(255, 255, 255, 0.72);
+          padding: 1rem;
+        }
+        .dashboard-card-header,
+        .metric-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 0.75rem;
+        }
+        .dashboard-title-input,
+        .metric-input {
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-sm);
+          color: var(--text-primary);
+          background: #ffffff;
+          font: inherit;
+          font-size: 0.82rem;
+          padding: 0.4rem 0.5rem;
+          outline: none;
+          width: 100%;
+        }
+        .metric-form {
+          display: grid;
+          grid-template-columns: 1fr 1.2fr 1.4fr auto;
+          gap: 0.5rem;
+        }
+        .sidebar-stack .metric-form {
+          grid-template-columns: 1fr;
+        }
+        .metric-card {
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-md);
+          background: rgba(255, 255, 255, 0.58);
+          padding: 0.7rem;
+        }
+        .print-only {
+          display: none;
+        }
         .list-item {
           border: 1px solid var(--border-subtle);
           border-radius: var(--radius-md);
@@ -411,6 +644,31 @@ export default function Home() {
           border-color: var(--border-accent);
           box-shadow: var(--shadow-glow);
         }
+        @media (max-width: 900px) {
+          .trace-grid,
+          .metric-form {
+            grid-template-columns: 1fr;
+          }
+        }
+        @media print {
+          body {
+            background: #ffffff !important;
+          }
+          .app-header,
+          .sidebar-stack,
+          .query-input-container,
+          .workspace-actions,
+          .insight-panel,
+          .status-container {
+            display: none !important;
+          }
+          .layout-grid {
+            display: block;
+          }
+          .print-only {
+            display: block;
+          }
+        }
       `}</style>
 
       <header className="app-header">
@@ -450,7 +708,35 @@ export default function Home() {
             <button type="button" className="small-btn" onClick={refreshSchema}>
               Refresh schema
             </button>
+            <button
+              type="button"
+              className="small-btn"
+              onClick={saveToDashboard}
+              disabled={!state.meta || !state.sql}
+            >
+              Save to dashboard
+            </button>
           </div>
+
+          {clarifyingQuestions.length > 0 && state.phase === "idle" && (
+            <section className="insight-panel glass-card">
+              <div className="section-heading">
+                <h2>Clarify Before Running</h2>
+              </div>
+              <div className="clarifier-list">
+                {clarifyingQuestions.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    className="small-btn"
+                    onClick={() => setQuestion(`${question.trim()} (${prompt})`)}
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
           
           <SqlPanel
             key={state.sql || "sql-panel"}
@@ -466,6 +752,8 @@ export default function Home() {
               rows={state.rows}
               columnTypes={state.columnTypes}
               isStreaming={state.isStreaming}
+              config={chartConfig}
+              onConfigChange={setChartConfig}
             />
           )}
 
@@ -481,9 +769,126 @@ export default function Home() {
               <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)" }}>{state.error}</p>
             </div>
           )}
+
+          {state.sql && (
+            <section className="insight-panel glass-card">
+              <div className="section-heading">
+                <h2>Answer Trace</h2>
+              </div>
+              <div className="trace-grid">
+                <div className="trace-item">
+                  <span>Source tables</span>
+                  <strong>{trace.tables.length ? trace.tables.join(", ") : "Not detected"}</strong>
+                </div>
+                <div className="trace-item">
+                  <span>Columns</span>
+                  <strong>{trace.columns.length ? trace.columns.join(", ") : "Not detected"}</strong>
+                </div>
+                <div className="trace-item">
+                  <span>Calculation</span>
+                  <strong>{trace.calculation}</strong>
+                </div>
+              </div>
+            </section>
+          )}
+
+          <section className="dashboard-panel glass-card">
+            <div className="section-heading">
+              <h2>Dashboard</h2>
+              <div className="workspace-actions">
+                <button type="button" className="small-btn" onClick={exportDashboard}>
+                  Export PDF
+                </button>
+                <button type="button" className="small-btn" onClick={() => persistDashboardCards([])}>
+                  Clear
+                </button>
+              </div>
+            </div>
+            <div className="print-only">
+              <h1>Retrieval-Augmented Analytics Dashboard</h1>
+            </div>
+            {dashboardCards.length === 0 && <span className="muted">No dashboard cards saved yet.</span>}
+            <div className="dashboard-grid">
+              {dashboardCards.map((card, index) => (
+                <article key={card.id} className="dashboard-card">
+                  <div className="dashboard-card-header">
+                    <input
+                      className="dashboard-title-input"
+                      value={card.title}
+                      onChange={(event) => updateDashboardCard(card.id, {
+                        title: event.target.value,
+                        chartConfig: { ...card.chartConfig, title: event.target.value },
+                      })}
+                    />
+                    <div className="item-actions">
+                      <button type="button" className="small-btn" onClick={() => moveDashboardCard(card.id, -1)} disabled={index === 0}>Up</button>
+                      <button type="button" className="small-btn" onClick={() => moveDashboardCard(card.id, 1)} disabled={index === dashboardCards.length - 1}>Down</button>
+                      <button type="button" className="small-btn" onClick={() => persistDashboardCards(dashboardCards.filter((item) => item.id !== card.id))}>Remove</button>
+                    </div>
+                  </div>
+                  <span className="muted">{card.question}</span>
+                  <ChartRenderer
+                    columns={card.columns}
+                    rows={card.rows}
+                    columnTypes={card.columnTypes}
+                    isStreaming={false}
+                    config={card.chartConfig}
+                    onConfigChange={(nextConfig) => updateDashboardCard(card.id, { chartConfig: nextConfig, title: nextConfig.title || card.title })}
+                    compact
+                  />
+                </article>
+              ))}
+            </div>
+          </section>
         </div>
 
         <div className="sidebar-stack">
+          <aside className="side-panel glass-card">
+            <div className="panel-title">
+              <span>Metric Layer</span>
+              <button type="button" onClick={addMetric}>Add</button>
+            </div>
+            <div className="metric-form">
+              <input
+                className="metric-input"
+                value={metricDraft.name}
+                onChange={(event) => setMetricDraft({ ...metricDraft, name: event.target.value })}
+                placeholder="Metric name"
+              />
+              <input
+                className="metric-input"
+                value={metricDraft.formula}
+                onChange={(event) => setMetricDraft({ ...metricDraft, formula: event.target.value })}
+                placeholder="SQL formula"
+              />
+              <input
+                className="metric-input"
+                value={metricDraft.description}
+                onChange={(event) => setMetricDraft({ ...metricDraft, description: event.target.value })}
+                placeholder="Business definition"
+              />
+            </div>
+            {metrics.length === 0 && <span className="muted">No reusable metrics yet.</span>}
+            <div className="metric-list">
+              {metrics.map((metric) => (
+                <div key={metric.id} className="metric-card">
+                  <div className="metric-row">
+                    <strong>{metric.name}</strong>
+                    <button
+                      type="button"
+                      className="small-btn"
+                      onClick={() => setQuestion(`Show ${metric.name} using ${metric.formula}`)}
+                    >
+                      Use
+                    </button>
+                  </div>
+                  <span className="muted">{metric.formula}</span>
+                  {metric.description && <p className="muted">{metric.description}</p>}
+                </div>
+              ))}
+            </div>
+          </aside>
+
           <aside className="side-panel glass-card">
             <div className="panel-title">
               <span>Datasets</span>
