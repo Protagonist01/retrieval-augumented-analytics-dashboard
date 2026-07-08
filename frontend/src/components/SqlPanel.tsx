@@ -5,11 +5,15 @@ import React, { useState } from "react";
 interface SqlPanelProps {
   sql: string | null;
   isLoading: boolean;
+  isStreaming?: boolean;
+  onRunSql?: (sql: string) => void;
 }
 
-export default function SqlPanel({ sql, isLoading }: SqlPanelProps) {
+export default function SqlPanel({ sql, isLoading, isStreaming = false, onRunSql }: SqlPanelProps) {
   const [copied, setCopied] = useState(false);
   const [isOpen, setIsOpen] = useState(true);
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftSql, setDraftSql] = useState(sql || "");
 
   const handleCopy = async () => {
     if (sql) {
@@ -144,6 +148,19 @@ export default function SqlPanel({ sql, isLoading }: SqlPanelProps) {
           background: var(--bg-code);
           color: var(--text-code);
         }
+        .sql-editor {
+          width: 100%;
+          min-height: 150px;
+          padding: 1.25rem;
+          border: none;
+          outline: none;
+          resize: vertical;
+          font-family: 'IBM Plex Mono', monospace;
+          font-size: 0.9rem;
+          line-height: 1.6;
+          background: var(--bg-code);
+          color: var(--text-code);
+        }
         .skeleton {
           display: flex;
           flex-direction: column;
@@ -172,9 +189,32 @@ export default function SqlPanel({ sql, isLoading }: SqlPanelProps) {
         </div>
         <div className="actions" onClick={(e) => e.stopPropagation()}>
           {sql && (
-            <button className="btn-action btn-copy-text" onClick={handleCopy}>
-              {copied ? "Copied!" : "Copy"}
-            </button>
+            <>
+              {onRunSql && (
+                <button
+                  className="btn-action btn-copy-text"
+                  onClick={() => {
+                    if (!isEditing) setDraftSql(sql || "");
+                    setIsEditing((value) => !value);
+                  }}
+                  disabled={isStreaming}
+                >
+                  {isEditing ? "Preview" : "Edit SQL"}
+                </button>
+              )}
+              {isEditing && onRunSql && (
+                <button
+                  className="btn-action btn-copy-text"
+                  onClick={() => onRunSql(draftSql)}
+                  disabled={isStreaming || !draftSql.trim()}
+                >
+                  Run edited SQL
+                </button>
+              )}
+              <button className="btn-action btn-copy-text" onClick={handleCopy}>
+                {copied ? "Copied!" : "Copy"}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -186,6 +226,13 @@ export default function SqlPanel({ sql, isLoading }: SqlPanelProps) {
             <div className="shimmer-line" style={{ width: "95%" }}></div>
             <div className="shimmer-line" style={{ width: "60%" }}></div>
           </div>
+        ) : isEditing ? (
+          <textarea
+            className="sql-editor"
+            value={draftSql}
+            onChange={(event) => setDraftSql(event.target.value)}
+            spellCheck={false}
+          />
         ) : (
           <pre className="code-container">
             <code>{sql ? tokenizeSql(sql) : ""}</code>

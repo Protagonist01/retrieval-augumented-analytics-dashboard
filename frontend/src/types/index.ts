@@ -26,3 +26,29 @@ export interface SchemaTable {
   name: string;
   columns: Array<{ name: string; type: string }>;
 }
+
+export interface QueryHistoryEntry {
+  id: string;
+  question: string;
+  sql: string | null;
+  status: "done" | "error";
+  rowCount: number;
+  durationMs: number;
+  createdAt: string;
+  error?: string | null;
+}
+
+export interface SavedQuestion {
+  id: string;
+  question: string;
+  createdAt: string;
+}
+
+export interface DatasetSummary {
+  tableName: string;
+  fileName: string;
+  source: "sample" | "uploaded";
+  sizeBytes: number;
+  rowCount: number;
+  columns: Array<{ name: string; type: string }>;
+}

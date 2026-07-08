@@ -59,21 +59,35 @@ class SchemaRetriever:
         if self._duckdb_conn is None:
             # Connect to in-memory DuckDB
             conn = duckdb.connect(":memory:")
-            # Register CSV files as views
-            data_dir = Path(self.settings.duckdb_data_dir)
-            if data_dir.exists():
-                for csv_path in data_dir.glob("*.csv"):
-                    table_name = csv_path.stem
-                    # Use forward slashes for DuckDB paths
-                    safe_path = str(csv_path.resolve()).replace("\\", "/")
-                    create_view_sql = (
-                        f"CREATE OR REPLACE VIEW {table_name} AS "
-                        f"SELECT * FROM read_csv_auto('{safe_path}')"
-                    )
-                    conn.execute(create_view_sql)
-                    logger.info(f"Registered view: {table_name} for path {safe_path}")
+            self._register_csv_views(conn)
             self._duckdb_conn = conn
         return self._duckdb_conn
+
+    def _iter_csv_paths(self) -> list[Path]:
+        paths: list[Path] = []
+        data_dirs = (Path(self.settings.duckdb_data_dir), Path(self.settings.duckdb_upload_dir))
+        for data_dir in data_dirs:
+            if data_dir.exists():
+                paths.extend(sorted(data_dir.glob("*.csv")))
+        return paths
+
+    def _register_csv_views(self, conn: duckdb.DuckDBPyConnection) -> None:
+        for csv_path in self._iter_csv_paths():
+            table_name = csv_path.stem
+            safe_path = str(csv_path.resolve()).replace("\\", "/")
+            create_view_sql = (
+                f"CREATE OR REPLACE VIEW {table_name} AS "
+                f"SELECT * FROM read_csv_auto('{safe_path}')"
+            )
+            conn.execute(create_view_sql)
+            logger.info(f"Registered view: {table_name} for path {safe_path}")
+
+    async def refresh(self) -> None:
+        if self._duckdb_conn is not None:
+            self._duckdb_conn.close()
+            self._duckdb_conn = None
+        if self.redis_client:
+            await self.redis_client.delete("raa:schema")
 
     async def get_context(self, question: str) -> SchemaContext:
         full_schema: list[SchemaTable] | None = None

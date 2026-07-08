@@ -81,6 +81,7 @@ eval-model:
 ## Lint Python (ruff) and TypeScript (tsc)
 lint:
 	cd $(BACKEND_DIR) && python -m ruff check src/ tests/
+	cd $(FRONTEND_DIR) && npm run lint
 	cd $(FRONTEND_DIR) && npx tsc --noEmit
 
 ## Format Python code

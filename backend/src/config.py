@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     ollama_model: str = "sqlcoder:7b"
 
     duckdb_data_dir: Path = Path("./data/sample")
+    duckdb_upload_dir: Path = Path("./data/user")
     max_result_rows: int = 10000
     query_timeout_seconds: int = 5
 

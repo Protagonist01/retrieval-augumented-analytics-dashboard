@@ -118,7 +118,7 @@ export function useQueryStream() {
   const [state, setState] = useState<QueryState>(initialState);
   const abortRef = useRef<AbortController | null>(null);
 
-  const submitQuery = useCallback(async (question: string) => {
+  const submitQuery = useCallback(async (question: string, sqlOverride?: string) => {
     // Cancel any in-flight request
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -131,7 +131,7 @@ export function useQueryStream() {
       const response = await fetch("/api/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question, sql: sqlOverride || undefined }),
         signal: controller.signal,
       });
 

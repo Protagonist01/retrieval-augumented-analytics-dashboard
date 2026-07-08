@@ -1,11 +1,13 @@
 "use client";
 
-import React, { useState, useRef, KeyboardEvent, useEffect } from "react";
+import React, { useRef, KeyboardEvent, useEffect } from "react";
 
 interface QueryInputProps {
   onSubmit: (question: string) => void;
   isStreaming: boolean;
   onCancel: () => void;
+  question: string;
+  onQuestionChange: (question: string) => void;
 }
 
 const SUGGESTIONS = [
@@ -15,8 +17,13 @@ const SUGGESTIONS = [
   "What is the average order value by country?"
 ];
 
-export default function QueryInput({ onSubmit, isStreaming, onCancel }: QueryInputProps) {
-  const [question, setQuestion] = useState("");
+export default function QueryInput({
+  onSubmit,
+  isStreaming,
+  onCancel,
+  question,
+  onQuestionChange,
+}: QueryInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-resize textarea height as content changes
@@ -43,7 +50,7 @@ export default function QueryInput({ onSubmit, isStreaming, onCancel }: QueryInp
 
   const handleSuggestionClick = (suggestion: string) => {
     if (!isStreaming) {
-      setQuestion(suggestion);
+      onQuestionChange(suggestion);
       textareaRef.current?.focus();
     }
   };
@@ -178,7 +185,7 @@ export default function QueryInput({ onSubmit, isStreaming, onCancel }: QueryInp
           ref={textareaRef}
           placeholder="Ask a question about your data..."
           value={question}
-          onChange={(e) => setQuestion(e.target.value.slice(0, 500))}
+          onChange={(e) => onQuestionChange(e.target.value.slice(0, 500))}
           onKeyDown={handleKeyDown}
           disabled={isStreaming}
           rows={1}

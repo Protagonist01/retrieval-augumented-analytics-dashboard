@@ -11,6 +11,26 @@ interface ResultTableProps {
 }
 
 export default function ResultTable({ columns, rows, columnTypes, isStreaming }: ResultTableProps) {
+  const escapeCsvValue = (value: QueryValue) => {
+    if (value === null || value === undefined) return "";
+    const text = String(value);
+    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, "\"\"")}"` : text;
+  };
+
+  const exportCsv = () => {
+    const csv = [
+      columns.map(escapeCsvValue).join(","),
+      ...rows.map((row) => row.map(escapeCsvValue).join(",")),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `query-results-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const isDateColumn = (colName: string, colType?: string): boolean => {
     const type = (colType || "").toUpperCase();
     const name = colName.toLowerCase();
@@ -117,6 +137,29 @@ export default function ResultTable({ columns, rows, columnTypes, isStreaming }:
           margin-top: 1rem;
           position: relative;
         }
+        .table-actions {
+          position: sticky;
+          top: 0;
+          display: flex;
+          justify-content: flex-end;
+          padding: 0.6rem 0.75rem;
+          background: rgba(255, 255, 255, 0.92);
+          border-bottom: 1px solid var(--border-subtle);
+          z-index: 15;
+        }
+        .export-btn {
+          border: 1px solid var(--border-subtle);
+          background: rgba(31, 138, 91, 0.08);
+          color: var(--accent-primary);
+          border-radius: var(--radius-sm);
+          cursor: pointer;
+          font-size: 0.75rem;
+          font-weight: 700;
+          padding: 0.35rem 0.65rem;
+        }
+        .export-btn:hover {
+          background: rgba(31, 138, 91, 0.14);
+        }
         .streaming-pulse {
           border-color: rgba(31, 138, 91, 0.4);
           animation: pulse-border 2s infinite ease-in-out;
@@ -193,6 +236,11 @@ export default function ResultTable({ columns, rows, columnTypes, isStreaming }:
         }
       `}</style>
 
+      <div className="table-actions">
+        <button type="button" className="export-btn" onClick={exportCsv}>
+          Export CSV
+        </button>
+      </div>
       <table>
         <thead>
           <tr>

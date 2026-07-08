@@ -35,10 +35,12 @@ async def run_query(
     executor: Any,
     explainer: Any,
     redis_client: aioredis.Redis | None = None,
+    sql_override: str | None = None,
 ) -> AsyncIterator[SSEEvent]:
     total_start = time.perf_counter()
     question_clean = question.strip().lower()
-    question_hash = hashlib.md5(question_clean.encode("utf-8")).hexdigest()
+    cache_basis = f"{question_clean}:{sql_override or ''}"
+    question_hash = hashlib.md5(cache_basis.encode("utf-8")).hexdigest()
     cache_key = f"raa:query_cache:{question_hash}"
 
     # 1. Check Redis query cache
@@ -83,16 +85,19 @@ async def run_query(
         return
     query_duration_seconds.labels(stage="validation").observe(time.perf_counter() - schema_start)
 
-    # 3. Generate SQL
+    # 3. Generate SQL, or use a user-edited SQL override.
     sql_start = time.perf_counter()
-    try:
-        sql = await sql_generator.generate(question, schema_context)
-    except Exception as e:
-        logger.error(f"SQL generation failed: {e}")
-        yield SSEEvent(
-            "error", {"code": "generation_error", "message": f"SQL generation failed: {e}"}
-        )
-        return
+    if sql_override:
+        sql = sql_override
+    else:
+        try:
+            sql = await sql_generator.generate(question, schema_context)
+        except Exception as e:
+            logger.error(f"SQL generation failed: {e}")
+            yield SSEEvent(
+                "error", {"code": "generation_error", "message": f"SQL generation failed: {e}"}
+            )
+            return
 
     # 4. Validate SQL
     val_start = time.perf_counter()
@@ -100,6 +105,17 @@ async def run_query(
     query_duration_seconds.labels(stage="validation").observe(time.perf_counter() - val_start)
 
     self_corrected = False
+    if not validation_result.ok and sql_override:
+        sql_validation_failures_total.labels(reason=validation_result.stage or "unknown").inc()
+        yield SSEEvent(
+            "error",
+            {
+                "code": "validation_error",
+                "message": validation_result.error or "Edited SQL failed validation",
+            },
+        )
+        return
+
     if not validation_result.ok:
         sql_validation_failures_total.labels(reason=validation_result.stage or "unknown").inc()
         logger.warning(
