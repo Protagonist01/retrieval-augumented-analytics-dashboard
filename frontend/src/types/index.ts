@@ -93,3 +93,72 @@ export interface AnswerTrace {
   columns: string[];
   calculation: string;
 }
+
+export interface EvalRunSummary {
+  fileName: string;
+  timestamp: string;
+  metrics: Record<string, number>;
+  failedCases: Array<{
+    id: string;
+    nl: string;
+    expected_sql: string;
+    generated_sql: string | null;
+    match: boolean;
+    validation_failed: boolean;
+    latency_ms: number;
+  }>;
+}
+
+export interface EvalSummary {
+  totalCases: number;
+  difficulties: Record<string, number>;
+  latestRun: EvalRunSummary | null;
+  runs: EvalRunSummary[];
+}
+
+export interface ModelComparison {
+  model: string;
+  status: string;
+  accuracy?: number | null;
+  sqlValidity?: number | null;
+  p95LatencyMs?: number | null;
+  notes: string;
+}
+
+export interface AdminStatus {
+  status: string;
+  version: string;
+  generatedAt: string;
+  cache: {
+    enabled: boolean;
+    schemaKeys: number;
+    queryKeys: number;
+  };
+  datasets: {
+    count: number;
+    uploaded: number;
+  };
+  connectors: {
+    count: number;
+  };
+  authMode: string;
+}
+
+export interface ConnectorConfig {
+  id?: string;
+  name: string;
+  kind: "postgres" | "mysql" | "supabase" | "bigquery" | "snowflake";
+  host: string;
+  database: string;
+  username: string;
+  project: string;
+  notes: string;
+  status?: string;
+  createdAt?: string;
+}
+
+export interface WorkspaceProfile {
+  name: string;
+  role: "admin" | "analyst" | "viewer";
+  allowedTables: string[];
+}

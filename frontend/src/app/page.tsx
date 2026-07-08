@@ -8,14 +8,19 @@ import ChartRenderer from "@/components/ChartRenderer";
 import ExplanationPanel from "@/components/ExplanationPanel";
 import {
   AnswerTrace,
+  AdminStatus,
   ChartConfig,
+  ConnectorConfig,
   DataDictionaryEntry,
   DashboardCard,
   DatasetSummary,
+  EvalSummary,
   MetricDefinition,
+  ModelComparison,
   QueryHistoryEntry,
   SavedQuestion,
   SchemaTable,
+  WorkspaceProfile,
 } from "@/types";
 
 const HISTORY_KEY = "raa.queryHistory";
@@ -23,6 +28,7 @@ const SAVED_KEY = "raa.savedQuestions";
 const DICTIONARY_KEY = "raa.dataDictionary";
 const DASHBOARD_KEY = "raa.dashboardCards";
 const METRICS_KEY = "raa.metricDefinitions";
+const WORKSPACE_KEY = "raa.workspaceProfile";
 
 const DEFAULT_CHART_CONFIG: ChartConfig = {
   title: "",
@@ -54,6 +60,15 @@ function formatBytes(value: number) {
   if (value < 1024) return `${value} B`;
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function loadStoredObject<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)) as T;
+  } catch {
+    return fallback;
+  }
 }
 
 function getClarifyingQuestions(value: string) {
@@ -134,6 +149,28 @@ export default function Home() {
   const [metrics, setMetrics] = useState<MetricDefinition[]>(() =>
     loadStoredList<MetricDefinition>(METRICS_KEY)
   );
+  const [workspace, setWorkspace] = useState<WorkspaceProfile>(() =>
+    loadStoredObject<WorkspaceProfile>(WORKSPACE_KEY, {
+      name: "Local Analytics Workspace",
+      role: "admin",
+      allowedTables: [],
+    })
+  );
+  const [evalSummary, setEvalSummary] = useState<EvalSummary | null>(null);
+  const [modelInput, setModelInput] = useState("openrouter/free, gpt-4o, sqlcoder:7b");
+  const [modelComparisons, setModelComparisons] = useState<ModelComparison[]>([]);
+  const [adminStatus, setAdminStatus] = useState<AdminStatus | null>(null);
+  const [connectors, setConnectors] = useState<ConnectorConfig[]>([]);
+  const [connectorDraft, setConnectorDraft] = useState<ConnectorConfig>({
+    name: "",
+    kind: "postgres",
+    host: "",
+    database: "",
+    username: "",
+    project: "",
+    notes: "",
+  });
+  const [systemMessage, setSystemMessage] = useState("");
   const [chartConfig, setChartConfig] = useState<ChartConfig>(DEFAULT_CHART_CONFIG);
   const [metricDraft, setMetricDraft] = useState({ name: "", formula: "", description: "" });
   const [schemaOpen, setSchemaOpen] = useState(true);
@@ -158,6 +195,11 @@ export default function Home() {
   const persistMetrics = (entries: MetricDefinition[]) => {
     setMetrics(entries);
     localStorage.setItem(METRICS_KEY, JSON.stringify(entries));
+  };
+
+  const persistWorkspace = (next: WorkspaceProfile) => {
+    setWorkspace(next);
+    localStorage.setItem(WORKSPACE_KEY, JSON.stringify(next));
   };
 
   const updateDictionary = (
@@ -201,13 +243,53 @@ export default function Home() {
     }
   }, []);
 
+  const fetchEvalSummary = useCallback(async () => {
+    try {
+      const response = await fetch("/api/evals");
+      if (response.ok) {
+        setEvalSummary(await response.json());
+      }
+    } catch (err) {
+      console.error("Failed to load eval summary: ", err);
+    }
+  }, []);
+
+  const fetchAdminStatus = useCallback(async () => {
+    try {
+      const response = await fetch("/api/admin/status");
+      if (response.ok) {
+        setAdminStatus(await response.json());
+      }
+    } catch (err) {
+      console.error("Failed to load admin status: ", err);
+    }
+  }, []);
+
+  const fetchConnectors = useCallback(async () => {
+    try {
+      const response = await fetch("/api/connectors");
+      if (response.ok) {
+        const data = await response.json();
+        setConnectors(Array.isArray(data.connectors) ? data.connectors : []);
+      }
+    } catch (err) {
+      console.error("Failed to load connectors: ", err);
+    }
+  }, []);
+
   useEffect(() => {
     const loadWorkspace = async () => {
-      await Promise.all([fetchSchema(), fetchDatasets()]);
+      await Promise.all([
+        fetchSchema(),
+        fetchDatasets(),
+        fetchEvalSummary(),
+        fetchAdminStatus(),
+        fetchConnectors(),
+      ]);
     };
 
     void loadWorkspace();
-  }, [fetchDatasets, fetchSchema]);
+  }, [fetchAdminStatus, fetchConnectors, fetchDatasets, fetchEvalSummary, fetchSchema]);
 
   useEffect(() => {
     if (!activeQuestion || state.isStreaming || !["done", "error"].includes(state.phase)) return;
@@ -322,6 +404,63 @@ export default function Home() {
 
   const exportDashboard = () => {
     window.print();
+  };
+
+  const compareModels = async () => {
+    const models = modelInput.split(",").map((item) => item.trim()).filter(Boolean);
+    if (models.length === 0) return;
+    try {
+      const response = await fetch("/api/evals/compare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ models }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setModelComparisons(data.comparisons || []);
+      }
+    } catch {
+      setModelComparisons([]);
+    }
+  };
+
+  const clearCache = async () => {
+    setSystemMessage("Clearing cache...");
+    await fetch("/api/cache/clear", { method: "POST" });
+    await Promise.all([fetchAdminStatus(), fetchSchema()]);
+    setSystemMessage("Cache cleared and schema refreshed");
+  };
+
+  const saveConnector = async () => {
+    if (!connectorDraft.name.trim()) return;
+    const response = await fetch("/api/connectors", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(connectorDraft),
+    });
+    if (response.ok) {
+      await Promise.all([fetchConnectors(), fetchAdminStatus()]);
+      setConnectorDraft({
+        name: "",
+        kind: "postgres",
+        host: "",
+        database: "",
+        username: "",
+        project: "",
+        notes: "",
+      });
+      setSystemMessage("Connector saved");
+    }
+  };
+
+  const testConnector = async () => {
+    const response = await fetch("/api/connectors/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(connectorDraft),
+    });
+    const data = await response.json().catch(() => null);
+    setSystemMessage(data?.message || data?.detail || "Connector checked");
   };
 
   const runEditedSql = (sql: string) => {
@@ -644,8 +783,74 @@ export default function Home() {
           border-color: var(--border-accent);
           box-shadow: var(--shadow-glow);
         }
+        .score-grid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 0.5rem;
+        }
+        .score-card {
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-md);
+          background: rgba(255, 255, 255, 0.62);
+          padding: 0.75rem;
+        }
+        .score-card span {
+          display: block;
+          color: var(--text-muted);
+          font-size: 0.7rem;
+          font-weight: 700;
+          text-transform: uppercase;
+        }
+        .score-card strong {
+          color: var(--accent-primary);
+          font-size: 1.15rem;
+        }
+        .connector-form,
+        .workspace-form {
+          display: grid;
+          gap: 0.5rem;
+        }
+        .connector-form input,
+        .connector-form select,
+        .workspace-form input,
+        .workspace-form select {
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-sm);
+          color: var(--text-primary);
+          background: #ffffff;
+          font: inherit;
+          font-size: 0.78rem;
+          padding: 0.4rem 0.5rem;
+          outline: none;
+          width: 100%;
+        }
+        .mini-table {
+          display: grid;
+          gap: 0.4rem;
+        }
+        .mini-row {
+          display: flex;
+          justify-content: space-between;
+          gap: 0.75rem;
+          border-bottom: 1px solid var(--border-subtle);
+          padding-bottom: 0.35rem;
+          color: var(--text-secondary);
+          font-size: 0.78rem;
+        }
+        .failed-case {
+          border: 1px solid rgba(194, 65, 61, 0.18);
+          border-radius: var(--radius-md);
+          background: rgba(194, 65, 61, 0.06);
+          padding: 0.65rem;
+          font-size: 0.78rem;
+        }
+        .message {
+          color: var(--text-secondary);
+          font-size: 0.78rem;
+        }
         @media (max-width: 900px) {
           .trace-grid,
+          .score-grid,
           .metric-form {
             grid-template-columns: 1fr;
           }
@@ -843,6 +1048,174 @@ export default function Home() {
         </div>
 
         <div className="sidebar-stack">
+          <aside className="side-panel glass-card">
+            <div className="panel-title">
+              <span>Eval Dashboard</span>
+              <button type="button" onClick={fetchEvalSummary}>Refresh</button>
+            </div>
+            <div className="score-grid">
+              <div className="score-card">
+                <span>Golden set</span>
+                <strong>{evalSummary?.totalCases ?? 0}</strong>
+              </div>
+              <div className="score-card">
+                <span>Accuracy</span>
+                <strong>
+                  {evalSummary?.latestRun?.metrics.accuracy !== undefined
+                    ? `${Math.round(evalSummary.latestRun.metrics.accuracy * 100)}%`
+                    : "n/a"}
+                </strong>
+              </div>
+              <div className="score-card">
+                <span>SQL validity</span>
+                <strong>
+                  {evalSummary?.latestRun?.metrics.sql_validity !== undefined
+                    ? `${Math.round(evalSummary.latestRun.metrics.sql_validity * 100)}%`
+                    : "n/a"}
+                </strong>
+              </div>
+            </div>
+            <div className="mini-table">
+              {Object.entries(evalSummary?.difficulties || {}).map(([difficulty, count]) => (
+                <div key={difficulty} className="mini-row">
+                  <span>{difficulty}</span>
+                  <strong>{count}</strong>
+                </div>
+              ))}
+            </div>
+            {(evalSummary?.latestRun?.failedCases || []).slice(0, 3).map((item) => (
+              <div key={item.id} className="failed-case">
+                <strong>{item.id}</strong>
+                <p>{item.nl}</p>
+              </div>
+            ))}
+          </aside>
+
+          <aside className="side-panel glass-card">
+            <div className="panel-title">
+              <span>Model Compare</span>
+              <button type="button" onClick={compareModels}>Compare</button>
+            </div>
+            <div className="connector-form">
+              <input
+                value={modelInput}
+                onChange={(event) => setModelInput(event.target.value)}
+                placeholder="openrouter/free, gpt-4o, sqlcoder:7b"
+              />
+            </div>
+            {modelComparisons.map((item) => (
+              <div key={item.model} className="list-item">
+                <strong>{item.model}</strong>
+                <span className="muted">
+                  Accuracy: {item.accuracy !== null && item.accuracy !== undefined ? `${Math.round(item.accuracy * 100)}%` : "baseline needed"}
+                </span>
+                <span className="muted">{item.notes}</span>
+              </div>
+            ))}
+          </aside>
+
+          <aside className="side-panel glass-card">
+            <div className="panel-title">
+              <span>Workspace & Access</span>
+              <button type="button" onClick={() => persistWorkspace(workspace)}>Save</button>
+            </div>
+            <div className="workspace-form">
+              <input
+                value={workspace.name}
+                onChange={(event) => persistWorkspace({ ...workspace, name: event.target.value })}
+                placeholder="Workspace name"
+              />
+              <select
+                value={workspace.role}
+                onChange={(event) => persistWorkspace({ ...workspace, role: event.target.value as WorkspaceProfile["role"] })}
+              >
+                <option value="admin">Admin</option>
+                <option value="analyst">Analyst</option>
+                <option value="viewer">Viewer</option>
+              </select>
+              <input
+                value={workspace.allowedTables.join(", ")}
+                onChange={(event) => persistWorkspace({
+                  ...workspace,
+                  allowedTables: event.target.value.split(",").map((item) => item.trim()).filter(Boolean),
+                })}
+                placeholder="Allowed tables"
+              />
+            </div>
+          </aside>
+
+          <aside className="side-panel glass-card">
+            <div className="panel-title">
+              <span>Admin & Cache</span>
+              <button type="button" onClick={clearCache}>Clear cache</button>
+            </div>
+            {systemMessage && <span className="message">{systemMessage}</span>}
+            <div className="mini-table">
+              <div className="mini-row"><span>Status</span><strong>{adminStatus?.status || "unknown"}</strong></div>
+              <div className="mini-row"><span>Cache</span><strong>{adminStatus?.cache.enabled ? "enabled" : "off"}</strong></div>
+              <div className="mini-row"><span>Query keys</span><strong>{adminStatus?.cache.queryKeys ?? 0}</strong></div>
+              <div className="mini-row"><span>Datasets</span><strong>{adminStatus?.datasets.count ?? 0}</strong></div>
+              <div className="mini-row"><span>Connectors</span><strong>{adminStatus?.connectors.count ?? 0}</strong></div>
+            </div>
+          </aside>
+
+          <aside className="side-panel glass-card">
+            <div className="panel-title">
+              <span>Data Sources</span>
+              <button type="button" onClick={saveConnector}>Save</button>
+            </div>
+            <div className="connector-form">
+              <input
+                value={connectorDraft.name}
+                onChange={(event) => setConnectorDraft({ ...connectorDraft, name: event.target.value })}
+                placeholder="Connection name"
+              />
+              <select
+                value={connectorDraft.kind}
+                onChange={(event) => setConnectorDraft({ ...connectorDraft, kind: event.target.value as ConnectorConfig["kind"] })}
+              >
+                <option value="postgres">Postgres</option>
+                <option value="mysql">MySQL</option>
+                <option value="supabase">Supabase</option>
+                <option value="bigquery">BigQuery</option>
+                <option value="snowflake">Snowflake</option>
+              </select>
+              <input
+                value={connectorDraft.host}
+                onChange={(event) => setConnectorDraft({ ...connectorDraft, host: event.target.value })}
+                placeholder="Host or account URL"
+              />
+              <input
+                value={connectorDraft.database}
+                onChange={(event) => setConnectorDraft({ ...connectorDraft, database: event.target.value })}
+                placeholder="Database"
+              />
+              <input
+                value={connectorDraft.username}
+                onChange={(event) => setConnectorDraft({ ...connectorDraft, username: event.target.value })}
+                placeholder="Username"
+              />
+              <input
+                value={connectorDraft.project}
+                onChange={(event) => setConnectorDraft({ ...connectorDraft, project: event.target.value })}
+                placeholder="Project / warehouse"
+              />
+              <input
+                value={connectorDraft.notes}
+                onChange={(event) => setConnectorDraft({ ...connectorDraft, notes: event.target.value })}
+                placeholder="Notes"
+              />
+              <button type="button" className="small-btn" onClick={testConnector}>Test settings</button>
+            </div>
+            {connectors.map((connector) => (
+              <div key={connector.id || connector.name} className="list-item">
+                <strong>{connector.name}</strong>
+                <span className="muted">{connector.kind} · {connector.status}</span>
+                <span className="muted">{connector.host || connector.project || "Not linked"}</span>
+              </div>
+            ))}
+          </aside>
+
           <aside className="side-panel glass-card">
             <div className="panel-title">
               <span>Metric Layer</span>

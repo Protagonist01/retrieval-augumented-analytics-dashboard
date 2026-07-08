@@ -19,6 +19,7 @@ services:
       - OLLAMA_MODEL=${OLLAMA_MODEL:-sqlcoder:7b}
       - DUCKDB_DATA_DIR=/app/data/sample
       - DUCKDB_UPLOAD_DIR=/app/data/user
+      - APP_CONFIG_DIR=/app/data/config
       - MAX_RESULT_ROWS=${MAX_RESULT_ROWS:-10000}
       - QUERY_TIMEOUT_SECONDS=${QUERY_TIMEOUT_SECONDS:-5}
       - REDIS_URL=redis://redis:6379

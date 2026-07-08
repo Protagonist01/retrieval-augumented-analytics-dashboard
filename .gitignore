@@ -44,6 +44,7 @@ playwright-report/
 *.duckdb.wal
 data/sample/*.csv
 data/user/
+data/config/
 
 # === Eval results (keep structure, ignore output) ===
 evals/results/*.json

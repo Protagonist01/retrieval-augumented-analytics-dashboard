@@ -19,6 +19,7 @@ class Settings(BaseSettings):
 
     duckdb_data_dir: Path = Path("./data/sample")
     duckdb_upload_dir: Path = Path("./data/user")
+    app_config_dir: Path = Path("./data/config")
     max_result_rows: int = 10000
     query_timeout_seconds: int = 5
 
