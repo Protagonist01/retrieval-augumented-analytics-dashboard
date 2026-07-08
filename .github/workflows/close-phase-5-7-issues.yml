@@ -1,0 +1,46 @@
+name: Close Phase 5, 6 and 7 Issues
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/close-phase-5-7-issues.yml
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  close-completed-issues:
+    name: Close completed Phase 5, 6 and 7 issues
+    runs-on: ubuntu-latest
+    if: github.repository == 'Protagonist01/retrieval-augumented-analytics-dashboard'
+    steps:
+      - name: Close issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const completedIssues = [5, 6, 7];
+
+            for (const issue_number of completedIssues) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body: "Completed in the Phase 5/6/7 implementation. Shipped the eval dashboard, model comparison scaffolding, workspace and role controls, admin/cache status controls, connector configuration, and external data-source setup for Postgres, MySQL, Supabase, BigQuery, and Snowflake.",
+              });
+
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number,
+                state: "closed",
+                state_reason: "completed",
+              });
+
+              core.info(`Closed #${issue_number}`);
+            }
