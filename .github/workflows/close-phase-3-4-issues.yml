@@ -1,0 +1,46 @@
+name: Close Phase 3 and 4 Issues
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/close-phase-3-4-issues.yml
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  close-completed-issues:
+    name: Close completed Phase 3 and 4 issues
+    runs-on: ubuntu-latest
+    if: github.repository == 'Protagonist01/retrieval-augumented-analytics-dashboard'
+    steps:
+      - name: Close issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const completedIssues = [3, 4];
+
+            for (const issue_number of completedIssues) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body: "Completed in the Phase 3/4 implementation. Shipped local dashboards, saved cards, rename/reorder controls, chart customization, PDF export, clarifying prompts, semantic metric definitions, calculation explanations, and source table/column traceability.",
+              });
+
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number,
+                state: "closed",
+                state_reason: "completed",
+              });
+
+              core.info(`Closed #${issue_number}`);
+            }
