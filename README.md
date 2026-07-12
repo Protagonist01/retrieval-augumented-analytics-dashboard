@@ -59,38 +59,18 @@ Most text-to-SQL demos stop at generating a query. They don't validate it, don't
 
 ## 🏗️ Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    User (Browser)                       │
-│             "Which product had the most                 │
-│              returns last quarter?"                     │
-└────────────────────────┬────────────────────────────────┘
-                         │  HTTP POST /api/query
-                         ▼
-┌─────────────────────────────────────────────────────────┐
-│                  Next.js Frontend                       │
-│   QueryInput → useQueryStream (SSE) → ResultTable       │
-│                                    → ChartRenderer      │
-│                                    → SqlExplainer       │
-└────────────────────────┬────────────────────────────────┘
-                         │  SSE stream (tokens arrive live)
-                         ▼
-┌─────────────────────────────────────────────────────────┐
-│                  FastAPI Backend                        │
-│                                                         │
-│  ① Schema Retriever  ──► Redis (schema cache, 5 min TTL)│
-│         │                                               │
-│  ② Text-to-SQL LLM   ──► GPT-4o / local SQLCoder        │
-│         │                                               │
-│  ③ SQL Validator      ──► sqlglot AST + safety rules    │
-│         │ (retry ×1 on failure)                         │
-│  ④ DuckDB Executor   ──► read-only, 10k rows, 5 s cap   │
-│         │                                               │
-│  ⑤ Explainer LLM     ──► plain-English result summary   │
-│         │                                               │
-│  ⑥ StreamingResponse ──► SSE chunks → frontend          │
-└─────────────────────────────────────────────────────────┘
-```
+<div align="center">
+
+![System Architecture](docs/assets/architecture.png)
+
+</div>
+
+The system is organized into four layers:
+
+- **Browser / Next.js Frontend** — responsive app shell with Recharts visualizations, SSE streaming via `useQueryStream`, and localStorage-backed persistence for query history, saved questions, dashboards, and workspace settings.
+- **FastAPI Application Layer** — request IDs, structured logging, CORS, Prometheus middleware, and route groups for queries, datasets, evals, connectors, admin, and health/metrics.
+- **Natural-Language Query Pipeline** — the six-stage core: Schema Retriever → Text-to-SQL LLM → SQL Validator → DuckDB Executor → Explainer LLM → SSE Response. Read-only execution with one self-correction retry, 10k-row cap, and 5-second timeout.
+- **Data & Configuration Foundation** — CSV data directories, in-memory DuckDB, evaluation artifacts, and application configuration including external connector profiles.
 
 > **ADRs** — see [`docs/adr/`](docs/adr/) for architectural decision records on LLM choice, validation strategy, streaming protocol, and DuckDB sandboxing.
 
